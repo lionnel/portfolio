@@ -8,7 +8,7 @@ const YAML = require("yaml");
 const YahooFinance = require("yahoo-finance2").default;
 //const YahooFinance = require("yahoo-finance2").YahooFinance;
 const yahooFinance = new YahooFinance({
-//  ...options, // optional
+  //  ...options, // optional
   suppressNotices: ["yahooSurvey"], // optional
 });
 
@@ -64,23 +64,37 @@ function normalizePosition(position) {
 
 async function enrichPosition(position) {
   try {
-    const quote = await yahooFinance.quote(position.symbol);
-    const price = Number(quote.regularMarketPrice || 0);
+    if(!position.symbol) {
+      const quote = await yahooFinance.quote(position.symbol);
+      if (!quote) {
+        console.log("Unknown position " + position.symbol)
+      } else {
+        const price = Number(quote.regularMarketPrice || 0);
+        return {
+          ...position,
+          marketPrice: price,
+          currency: quote.currency || "EUR",
+          marketValue: Number((position.shares * price).toFixed(2)),
+          quoteName: quote.longName || quote.shortName || position.name || position.symbol,
+        };
+      }
+    }
     return {
       ...position,
-      marketPrice: price,
+      marketPrice: 0,
       currency: quote.currency || "EUR",
       marketValue: Number((position.shares * price).toFixed(2)),
       quoteName: quote.longName || quote.shortName || position.name || position.symbol,
     };
-  } catch {
+  } catch (error) {
+    console.log("Retreiving position(" + position.symbol + "): " + error.message);
     return {
       ...position,
       marketPrice: null,
       currency: "EUR",
       marketValue: null,
       quoteName: position.name || position.symbol,
-    };
+    }
   }
 }
 
