@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Portfolio Tracker</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="app" class="container">
+      <header class="header">
+        <div class="header-top">
+          <div>
+            <h1>{{ t('app.title') }}</h1>
+            <p>{{ t('app.subtitle') }}</p>
+          </div>
+          <div class="language-switcher">
+            <label for="language">{{ t('app.languageLabel') }}</label>
+            <select
+              id="language"
+              v-model="locale"
+              class="input language-select"
+            >
+              <option value="fr">{{ t('app.languages.fr') }}</option>
+              <option value="en">{{ t('app.languages.en') }}</option>
+            </select>
+          </div>
+        </div>
+      </header>
+
+      <div v-if="message.text" class="message" :class="message.type">
+        {{ message.text }}
+      </div>
+
+      <div>
+        <section
+          class="card card-collapsible"
+          :class="{ 'is-expanded': isFormExpanded }"
+        >
+          <div class="card-header card-header-collapsible">
+            <h2>{{ t('form.title') }}</h2>
+            <button
+              class="button secondary card-toggle"
+              type="button"
+              @click="toggleFormExpanded"
+              :aria-expanded="String(isFormExpanded)"
+            >
+              {{ isFormExpanded ? t('form.collapseButton') :
+              t('form.expandButton') }}
+            </button>
+          </div>
+          <div v-show="isFormExpanded">
+            <div class="card-body">
+              <div class="field">
+                <label for="search">{{ t('form.searchLabel') }}</label>
+                <input
+                  id="search"
+                  v-model.trim="searchQuery"
+                  class="input"
+                  type="text"
+                  :placeholder="t('form.searchPlaceholder')"
+                  @input="handleSearchInput"
+                />
+              </div>
+
+              <div v-if="isSearching" class="footer-note">
+                {{ t('form.searching') }}
+              </div>
+
+              <div v-if="searchResults.length" class="search-results">
+                <div
+                  v-for="result in searchResults"
+                  :key="result.symbol"
+                  class="search-item"
+                  @click="selectSearchResult(result)"
+                >
+                  <div>
+                    <div class="search-item-title">{{ result.name }}</div>
+                    <div class="search-item-meta">{{ result.symbol }}</div>
+                  </div>
+                  <div class="search-item-meta">{{ result.exchange }}</div>
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="symbol">{{ t('form.symbolLabel') }}</label>
+                <input
+                  id="symbol"
+                  v-model.trim="form.symbol"
+                  class="input"
+                  type="text"
+                  :placeholder="t('form.symbolPlaceholder')"
+                />
+              </div>
+
+              <div class="field">
+                <label for="name">{{ t('form.nameLabel') }}</label>
+                <input
+                  id="name"
+                  v-model.trim="form.name"
+                  class="input"
+                  type="text"
+                  :placeholder="t('form.namePlaceholder')"
+                />
+              </div>
+
+              <div class="field">
+                <label for="shares">{{ t('form.sharesLabel') }}</label>
+                <input
+                  id="shares"
+                  v-model.number="form.shares"
+                  class="input"
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  :placeholder="t('form.sharesPlaceholder')"
+                />
+              </div>
+
+              <div class="button-row">
+                <button
+                  class="button"
+                  @click="addPosition"
+                  :disabled="isSaving"
+                >
+                  {{ t('form.addButton') }}
+                </button>
+                <button
+                  class="button secondary"
+                  @click="resetForm"
+                  :disabled="isSaving"
+                >
+                  {{ t('form.resetButton') }}
+                </button>
+              </div>
+
+              <p class="footer-note">{{ t('form.helper') }}</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div>
+        <section class="card">
+          <div class="card-header">
+            <h2>{{ t('portfolio.title') }}</h2>
+            <p>{{ t('portfolio.subtitle') }}</p>
+          </div>
+          <div class="card-body">
+            <div class="summary">
+              <div class="summary-card">
+                <h3>{{ t('summary.positions') }}</h3>
+                <p>{{ positions.length }}</p>
+              </div>
+              <div class="summary-card">
+                <h3>{{ t('summary.value') }}</h3>
+                <p>{{ formatCurrency(totalMarketValue, summaryCurrency) }}</p>
+              </div>
+            </div>
+
+            <div v-if="isLoading" class="empty-state">
+              {{ t('portfolio.loading') }}
+            </div>
+
+            <template v-else>
+              <div v-if="!positions.length" class="empty-state">
+                {{ t('portfolio.empty') }}
+              </div>
+
+              <div v-else class="portfolio-list">
+                <article
+                  v-for="(position, index) in positions"
+                  :key="position.symbol + '-' + index"
+                  class="position"
+                >
+                  <div class="position-stats">
+                    <div class="stat">
+
+                      <a :href="`https://www.boursorama.com/cours/1rP${position.symbol.split('.')[0]}`" target="_blank">
+                        <h3 class="position-title">
+                          {{ position.name || position.quoteName ||
+                          position.symbol }}
+                        </h3>
+                        <p class="position-subtitle">{{ position.symbol }}</p>
+                      </a>
+                    </div>
+
+                    <div class="stat">
+                      <span class="stat-label"
+                        >{{ t('portfolio.shares') }}</span
+                      >
+                      <span class="stat-value"
+                        >{{ formatNumber(position.shares) }}</span
+                      >
+                    </div>
+                    <div class="stat">
+                      <span class="stat-label"
+                        >{{ t('portfolio.marketPrice') }}</span
+                      >
+                      <span class="stat-value"
+                        >{{ formatCurrency(position.marketPrice,
+                        position.currency) }}</span
+                      >
+                    </div>
+                    <div class="stat">
+                      <span class="stat-label"
+                        >{{ t('portfolio.marketValue') }}</span
+                      >
+                      <span class="stat-value"
+                        >{{ formatCurrency(position.marketValue,
+                        position.currency) }}</span
+                      >
+                    </div>
+                    <button
+                      class="button danger"
+                      @click="removePosition(index)"
+                      :disabled="isSaving"
+                    >
+                      {{ t('portfolio.removeButton') }}
+                    </button>
+                  </div>
+                </article>
+              </div>
+            </template>
+
+            <div class="button-row" style="margin-top: 20px">
+              <button
+                class="button"
+                @click="savePortfolio"
+                :disabled="isSaving || isLoading"
+              >
+                {{ isSaving ? t('portfolio.saving') : t('portfolio.saveButton')
+                }}
+              </button>
+              <button
+                class="button secondary"
+                @click="loadPortfolio"
+                :disabled="isSaving || isLoading"
+              >
+                {{ t('portfolio.refreshButton') }}
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
