@@ -72,7 +72,8 @@ async function enrichPosition(position, portfolio) {
       if (cache.yesterdayQuotation && isMoreThan3DaysAgo(cache.yesterdayQuotation)) {
         cache={}
       }
-    } else {
+    }
+    if (!cache) {
       const quote = await yahooFinance.quote(position.symbol);
       if (quote) {
         const price = Number(quote.regularMarketPreviousClose || 0);
