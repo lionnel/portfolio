@@ -43,10 +43,7 @@ async function ensureDataFile() {
 async function readPortfolio() {
   await ensureDataFile();
   const raw = await fs.readFile(DATA_FILE, "utf8");
-  const data = YAML.parse(raw) || {};
-  return {
-    positions: Array.isArray(data.positions) ? data.positions : [],
-  };
+  return YAML.parse(raw) || { positions: [] };
 }
 
 async function writePortfolio(portfolio) {
@@ -54,56 +51,58 @@ async function writePortfolio(portfolio) {
   await fs.writeFile(DATA_FILE, YAML.stringify(portfolio), "utf8");
 }
 
-function normalizePosition(position) {
-  return {
-    symbol: String(position.symbol || "").trim().toUpperCase(),
-    name: String(position.name || "").trim(),
-    shares: Number(position.shares || 0),
-  };
+function isMoreThan3DaysAgo(dateString) {
+  try {
+    const targetDate = new Date(dateString);
+    const now = new Date();
+    const diffMs = now - targetDate;
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    return diffDays > 3;
+  }
+  catch {
+    return true;
+  }
 }
 
-async function enrichPosition(position) {
-  try {
-    if(!position.symbol) {
-      const quote = await yahooFinance.quote(position.symbol);
-      if (!quote) {
-        console.log("Unknown position " + position.symbol)
-      } else {
-        const price = Number(quote.regularMarketPrice || 0);
-        return {
-          ...position,
-          marketPrice: price,
-          currency: quote.currency || "EUR",
-          marketValue: Number((position.shares * price).toFixed(2)),
-          quoteName: quote.longName || quote.shortName || position.name || position.symbol,
-        };
+async function enrichPosition(position, portfolio) {
+  if (position.symbol) {
+    let cache = {};
+    if (portfolio.cache && portfolio.cache[position.symbol]) {
+      cache = portfolio.cache[position.symbol];
+      if (cache.yesterdayQuotation && isMoreThan3DaysAgo(cache.yesterdayQuotation)) {
+        cache={}
       }
+    } else {
+      const quote = await yahooFinance.quote(position.symbol);
+      const price = Number(quote.regularMarketPreviousClose || 0);
+      const quotationDay = new Date(quote.regularMarketTime);
+      quotationDay.setUTCDate(quotationDay.getUTCDate() - 1);
+      const yesterdayQuotation = quotationDay.toISOString().split("T")[0];
+      const currency = quote.currency || "EUR";
+      cache = { price: price, currency: currency, yesterdayQuotation:yesterdayQuotation };
+      if (!portfolio.cache) {
+        portfolio.cache = {};
+      }
+      portfolio.cache[position.symbol] = cache;
     }
-    return {
-      ...position,
-      marketPrice: 0,
-      currency: quote.currency || "EUR",
-      marketValue: Number((position.shares * price).toFixed(2)),
-      quoteName: quote.longName || quote.shortName || position.name || position.symbol,
-    };
-  } catch (error) {
-    console.log("Retreiving position(" + position.symbol + "): " + error.message);
-    return {
-      ...position,
-      marketPrice: null,
-      currency: "EUR",
-      marketValue: null,
-      quoteName: position.name || position.symbol,
-    }
+    position.marketPrice = cache.price;
+    position.marketValue = Number((position.shares * cache.price).toFixed(2));
   }
+}
+
+async function enrichPortfolio(portfolio) {
+  for(position of portfolio.positions) {
+    await enrichPosition(position, portfolio);
+  }
+  await writePortfolio(portfolio);
+  return portfolio;
 }
 
 app.get("/api/portfolio", async (req, res) => {
   try {
-    const portfolio = await readPortfolio();
-    const positions = await Promise.all(
-      portfolio.positions.map(async (position) => enrichPosition(normalizePosition(position)))
-    );
+    let portfolio = await readPortfolio();
+    portfolio = await enrichPortfolio(portfolio);
+    const positions = portfolio.positions;
     res.json({ positions });
   } catch (error) {
     res.status(500).json({ error: "Failed to load portfolio" });
@@ -112,15 +111,14 @@ app.get("/api/portfolio", async (req, res) => {
 
 app.put("/api/portfolio", async (req, res) => {
   try {
-    const inputPositions = Array.isArray(req.body.positions) ? req.body.positions : [];
-    const positions = inputPositions
-      .map(normalizePosition)
-      .filter((position) => position.symbol && Number.isFinite(position.shares));
-
-    await writePortfolio({ positions });
-
-    const enrichedPositions = await Promise.all(positions.map(enrichPosition));
-    res.json({ positions: enrichedPositions });
+    const inputPositions = Array.isArray(req.body.positions)
+      ? req.body.positions
+      : [];
+    let portfolio = readPortfolio();
+    portfolio.positions = inputPositions;
+    portfolio = await enrichedPositions(portfolio);
+    await writePortfolio(portfolio);
+    res.json({ positions: portfolio.positions });
   } catch (error) {
     res.status(500).json({ error: "Failed to save portfolio" });
   }
@@ -140,7 +138,13 @@ app.get("/api/search", async (req, res) => {
     });
 
     const results = (searchResult.quotes || [])
-      .filter((item) => item.symbol && String(item.exchange || "").toLowerCase().includes("paris"))
+      .filter(
+        (item) =>
+          item.symbol &&
+          String(item.exchange || "")
+            .toLowerCase()
+            .includes("paris"),
+      )
       .map((item) => ({
         symbol: item.symbol,
         name: item.longname || item.shortname || item.symbol,
