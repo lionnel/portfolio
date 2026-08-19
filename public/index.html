@@ -176,8 +176,10 @@
                 >
                   <div class="position-stats">
                     <div class="stat">
-
-                      <a :href="`https://www.boursorama.com/cours/1rP${position.symbol.split('.')[0]}`" target="_blank">
+                      <a
+                        v-bind:href="position.url"
+                        target="_blank"
+                      >
                         <h3 class="position-title">
                           {{ position.name || position.quoteName ||
                           position.symbol }}

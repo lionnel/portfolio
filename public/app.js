@@ -213,6 +213,7 @@ createApp({
         marketValue: position.marketValue ?? null,
         currency: position.currency || "EUR",
         quoteName: position.quoteName || position.name || position.symbol || "",
+        url: position.url
       };
     },
     resetForm() {

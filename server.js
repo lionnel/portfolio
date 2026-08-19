@@ -74,19 +74,34 @@ async function enrichPosition(position, portfolio) {
       }
     } else {
       const quote = await yahooFinance.quote(position.symbol);
-      const price = Number(quote.regularMarketPreviousClose || 0);
-      const quotationDay = new Date(quote.regularMarketTime);
-      quotationDay.setUTCDate(quotationDay.getUTCDate() - 1);
-      const yesterdayQuotation = quotationDay.toISOString().split("T")[0];
-      const currency = quote.currency || "EUR";
-      cache = { price: price, currency: currency, yesterdayQuotation:yesterdayQuotation };
-      if (!portfolio.cache) {
-        portfolio.cache = {};
+      if (quote) {
+        const price = Number(quote.regularMarketPreviousClose || 0);
+        const quotationDay = new Date(quote.regularMarketTime);
+        quotationDay.setUTCDate(quotationDay.getUTCDate() - 1);
+        const yesterdayQuotation = quotationDay.toISOString().split("T")[0];
+        const currency = quote.currency || "EUR";
+        cache = { price: price, currency: currency, yesterdayQuotation:yesterdayQuotation };
+        if (!portfolio.cache) {
+          portfolio.cache = {};
+        }
+        portfolio.cache[position.symbol] = cache;
+      } else {
+        console.error("Impossible to get quote for " + position.symbol);
       }
-      portfolio.cache[position.symbol] = cache;
     }
     position.marketPrice = cache.price;
     position.marketValue = Number((position.shares * cache.price).toFixed(2));
+    const mapping = {
+      PA: "1rP",
+      AS: "1rA"
+    };
+
+    function transform(value) {
+      const [first, second] = value.split(".");
+      const mappedSecond = mapping[second] ?? second;
+      return `https://www.boursorama.com/cours/${mappedSecond}${first}`;
+    }
+    position.url = transform(position.symbol)
   }
 }
 
